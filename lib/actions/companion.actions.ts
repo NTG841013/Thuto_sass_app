@@ -74,11 +74,20 @@ export const getRecentSessions = async (limit = 10) => {
         .from('session_history')
         .select(`companions:companion_id (*)`)
         .order('created_at', { ascending: false })
-        .limit(limit)
+        .limit(limit * 3) // Get more to account for duplicates
 
     if(error) throw new Error(error.message);
 
-    return data.map(({ companions }) => companions);
+    // ✅ Deduplicate companions by ID
+    const companionsMap = new Map();
+    data.forEach(({ companions }) => {
+        if (companions && !companionsMap.has(companions.id)) {
+            companionsMap.set(companions.id, companions);
+        }
+    });
+
+    // Return unique companions, limited to the requested amount
+    return Array.from(companionsMap.values()).slice(0, limit);
 }
 
 export const getUserSessions = async (userId: string, limit = 10) => {
@@ -88,11 +97,20 @@ export const getUserSessions = async (userId: string, limit = 10) => {
         .select(`companions:companion_id (*)`)
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
-        .limit(limit)
+        .limit(limit * 3) // Get more to account for duplicates
 
     if(error) throw new Error(error.message);
 
-    return data.map(({ companions }) => companions);
+    // ✅ Deduplicate companions by ID
+    const companionsMap = new Map();
+    data.forEach(({ companions }) => {
+        if (companions && !companionsMap.has(companions.id)) {
+            companionsMap.set(companions.id, companions);
+        }
+    });
+
+    // Return unique companions, limited to the requested amount
+    return Array.from(companionsMap.values()).slice(0, limit);
 }
 
 export const getUserCompanions = async (userId: string) => {
@@ -128,7 +146,7 @@ export const newCompanionPermissions = async () => {
 
     if(error) throw new Error(error.message);
 
-    const companionCount = data?.length;
+    const companionCount = data?.length || 0;
 
     if(companionCount >= limit) {
         return false

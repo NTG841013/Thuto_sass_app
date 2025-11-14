@@ -17,18 +17,32 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
+                                       children,
+                                   }: Readonly<{
+    children: React.ReactNode;
 }>) {
-  return (
-    <html lang="en">
-      <body className={`${bricolage.variable} antialiased`}>
-      <ClerkProvider appearance={{variables: {colorPrimary: '#fe5933'}}}>
-      <Navbar/>
-      {children}
-      </ClerkProvider>
-      </body>
-    </html>
-  );
+    // Suppress Daily.co transport warnings in development
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+        const originalError = console.error;
+        console.error = (...args) => {
+            if (
+                args[0]?.includes?.('transport') &&
+                args[0]?.includes?.('disconnected')
+            ) {
+                return; // Suppress transport disconnect messages
+            }
+            originalError.apply(console, args);
+        };
+    }
+
+    return (
+        <html lang="en">
+        <body className={`${bricolage.variable} antialiased`}>
+        <ClerkProvider appearance={{variables: {colorPrimary: '#fe5933'}}}>
+            <Navbar/>
+            {children}
+        </ClerkProvider>
+        </body>
+        </html>
+    );
 }
