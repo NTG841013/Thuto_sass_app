@@ -10,18 +10,26 @@ import {
     getUserCompanions,
     getUserSessions,
     getBookmarkedCompanions,
+    getUserConversations,
+    getConversationStats,
 } from "@/lib/actions/companion.actions";
 import Image from "next/image";
 import CompanionsList from "@/components/CompanionsList";
+import ConversationCard from "@/components/ConversationCard";
 
 const Profile = async () => {
     const user = await currentUser();
 
     if (!user) redirect("/sign-in");
 
+    // Original data
     const companions = await getUserCompanions(user.id);
     const sessionHistory = await getUserSessions(user.id);
     const bookmarkedCompanions = await getBookmarkedCompanions(user.id);
+
+    // New conversation history data
+    const conversations = await getUserConversations(20);
+    const stats = await getConversationStats();
 
     return (
         <main className="min-lg:w-3/4">
@@ -32,6 +40,7 @@ const Profile = async () => {
                         alt={user.firstName!}
                         width={110}
                         height={110}
+                        className="rounded-lg"
                     />
                     <div className="flex flex-col gap-2">
                         <h1 className="font-bold text-2xl">
@@ -42,8 +51,8 @@ const Profile = async () => {
                         </p>
                     </div>
                 </div>
-                <div className="flex gap-4">
-                    <div className="border border-black rouded-lg p-3 gap-2 flex flex-col h-fit">
+                <div className="flex gap-4 max-sm:flex-col max-sm:w-full">
+                    <div className="border border-black rounded-lg p-3 gap-2 flex flex-col h-fit">
                         <div className="flex gap-2 items-center">
                             <Image
                                 src="/icons/check.svg"
@@ -55,7 +64,7 @@ const Profile = async () => {
                         </div>
                         <div>Lessons completed</div>
                     </div>
-                    <div className="border border-black rouded-lg p-3 gap-2 flex flex-col h-fit">
+                    <div className="border border-black rounded-lg p-3 gap-2 flex flex-col h-fit">
                         <div className="flex gap-2 items-center">
                             <Image src="/icons/cap.svg" alt="cap" width={22} height={22} />
                             <p className="text-2xl font-bold">{companions.length}</p>
@@ -64,39 +73,113 @@ const Profile = async () => {
                     </div>
                 </div>
             </section>
-            <Accordion type="multiple">
+
+            {/* New Statistics Section */}
+            <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="rounded-border p-4 bg-white">
+                    <p className="text-muted-foreground text-xs mb-1">Total Sessions</p>
+                    <p className="text-2xl font-bold">{stats.totalConversations}</p>
+                </div>
+                <div className="rounded-border p-4 bg-white">
+                    <p className="text-muted-foreground text-xs mb-1">Total Time</p>
+                    <p className="text-2xl font-bold">{Math.round(stats.totalDuration / 60)}m</p>
+                </div>
+                <div className="rounded-border p-4 bg-white">
+                    <p className="text-muted-foreground text-xs mb-1">Avg Duration</p>
+                    <p className="text-2xl font-bold">{stats.averageDuration}s</p>
+                </div>
+                <div className="rounded-border p-4 bg-white">
+                    <p className="text-muted-foreground text-xs mb-1">Companions Used</p>
+                    <p className="text-2xl font-bold">{stats.uniqueCompanions}</p>
+                </div>
+            </section>
+
+            <Accordion type="multiple" defaultValue={["conversations"]}>
+                {/* New Conversation History Section */}
+                <AccordionItem value="conversations">
+                    <AccordionTrigger className="text-2xl font-bold">
+                        Conversation History {conversations.length > 0 && `(${conversations.length})`}
+                    </AccordionTrigger>
+                    <AccordionContent>
+                        {conversations.length === 0 ? (
+                            <div className="rounded-border p-10 text-center bg-white">
+                                <p className="text-muted-foreground">
+                                    No conversations yet. Start a session to see your history here!
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col gap-4">
+                                {conversations.map((conversation) => (
+                                    <ConversationCard
+                                        key={conversation.id}
+                                        conversation={conversation}
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </AccordionContent>
+                </AccordionItem>
+
+                {/* Original Sections */}
                 <AccordionItem value="bookmarks">
                     <AccordionTrigger className="text-2xl font-bold">
                         Bookmarked Companions {`(${bookmarkedCompanions.length})`}
                     </AccordionTrigger>
                     <AccordionContent>
-                        <CompanionsList
-                            companions={bookmarkedCompanions}
-                            title="Bookmarked Companions"
-                        />
+                        {bookmarkedCompanions.length === 0 ? (
+                            <div className="rounded-border p-10 text-center bg-white">
+                                <p className="text-muted-foreground">
+                                    No bookmarked companions yet.
+                                </p>
+                            </div>
+                        ) : (
+                            <CompanionsList
+                                companions={bookmarkedCompanions}
+                                title="Bookmarked Companions"
+                            />
+                        )}
                     </AccordionContent>
                 </AccordionItem>
+
                 <AccordionItem value="recent">
                     <AccordionTrigger className="text-2xl font-bold">
-                        Recent Sessions
+                        Recent Sessions {`(${sessionHistory.length})`}
                     </AccordionTrigger>
                     <AccordionContent>
-                        <CompanionsList
-                            title="Recent Sessions"
-                            companions={sessionHistory}
-                        />
+                        {sessionHistory.length === 0 ? (
+                            <div className="rounded-border p-10 text-center bg-white">
+                                <p className="text-muted-foreground">
+                                    No recent sessions yet.
+                                </p>
+                            </div>
+                        ) : (
+                            <CompanionsList
+                                title="Recent Sessions"
+                                companions={sessionHistory}
+                            />
+                        )}
                     </AccordionContent>
                 </AccordionItem>
+
                 <AccordionItem value="companions">
                     <AccordionTrigger className="text-2xl font-bold">
                         My Companions {`(${companions.length})`}
                     </AccordionTrigger>
                     <AccordionContent>
-                        <CompanionsList title="My Companions" companions={companions} />
+                        {companions.length === 0 ? (
+                            <div className="rounded-border p-10 text-center bg-white">
+                                <p className="text-muted-foreground">
+                                    You haven't created any companions yet.
+                                </p>
+                            </div>
+                        ) : (
+                            <CompanionsList title="My Companions" companions={companions} />
+                        )}
                     </AccordionContent>
                 </AccordionItem>
             </Accordion>
         </main>
     );
 };
+
 export default Profile;
