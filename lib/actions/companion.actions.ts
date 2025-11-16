@@ -99,16 +99,23 @@ export const newCompanionPermissions = async () => {
 
 // ==================== SESSION HISTORY ====================
 
-export const addToSessionHistory = async (companionId: string) => {
+export const addToSessionHistory = async (companionId: string, duration?: number) => {
     const { userId } = await auth();
     const supabase = createSupabaseClient();
 
+    const insertData: any = {
+        companion_id: companionId,
+        user_id: userId,
+    };
+
+    // Add duration if provided
+    if (duration !== undefined) {
+        insertData.duration = duration;
+    }
+
     const { data, error } = await supabase
         .from('session_history')
-        .insert({
-            companion_id: companionId,
-            user_id: userId,
-        })
+        .insert(insertData)
         .select();
 
     if(error) throw new Error(error.message);
@@ -206,6 +213,23 @@ export const getBookmarkedCompanions = async (userId: string) => {
 
 // ==================== CONVERSATION HISTORY (NEW) ====================
 
+// Check if user has access to conversation history features
+// Free (3_companion_limit) = No access
+// Core (10_companion_limit) = Has access
+// Pro (unlimited/pro plan) = Has access
+export const hasConversationHistoryAccess = async () => {
+    const { has } = await auth();
+
+    // Pro users (unlimited companions) have access
+    if (has({ plan: 'pro' })) return true;
+
+    // Core users (10 companion limit) have access
+    if (has({ feature: "10_companion_limit" })) return true;
+
+    // Free users (3 companion limit) don't have access
+    return false;
+};
+
 export const saveConversationHistory = async ({
                                                   sessionId,
                                                   companionId,
@@ -218,7 +242,25 @@ export const saveConversationHistory = async ({
     duration?: number;
 }) => {
     const { userId } = await auth();
-    if (!userId) throw new Error('User not authenticated');
+    if (!userId) {
+        console.error('❌ No userId found when saving conversation');
+        throw new Error('User not authenticated');
+    }
+
+    // ✅ Check if user has access to conversation history
+    const hasAccess = await hasConversationHistoryAccess();
+    if (!hasAccess) {
+        console.log('ℹ️ User does not have access to conversation history (Basic plan)');
+        return null; // Don't save for basic plan users
+    }
+
+    console.log('💾 Attempting to save conversation:', {
+        sessionId,
+        companionId,
+        userId,
+        messageCount: messages.length,
+        duration,
+    });
 
     const supabase = createSupabaseClient();
 
@@ -234,14 +276,25 @@ export const saveConversationHistory = async ({
         .select()
         .single();
 
-    if (error) throw new Error(error.message);
+    if (error) {
+        console.error('❌ Error saving conversation:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        throw new Error(`Failed to save conversation: ${error.message}`);
+    }
 
+    console.log('✅ Conversation saved successfully:', data);
     return data;
 };
 
 export const getUserConversations = async (limit = 20, page = 1) => {
     const { userId } = await auth();
     if (!userId) throw new Error('User not authenticated');
+
+    // ✅ Check access
+    const hasAccess = await hasConversationHistoryAccess();
+    if (!hasAccess) {
+        return []; // Return empty array for basic plan users
+    }
 
     const supabase = createSupabaseClient();
 
@@ -253,7 +306,7 @@ export const getUserConversations = async (limit = 20, page = 1) => {
             session_history:session_id (created_at)
         `)
         .eq('user_id', userId)
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: true }) // ✅ ASCENDING = Oldest first
         .range((page - 1) * limit, page * limit - 1);
 
     if (error) throw new Error(error.message);
@@ -265,6 +318,12 @@ export const getCompanionConversations = async (companionId: string, limit = 10)
     const { userId } = await auth();
     if (!userId) throw new Error('User not authenticated');
 
+    // ✅ Check access
+    const hasAccess = await hasConversationHistoryAccess();
+    if (!hasAccess) {
+        return [];
+    }
+
     const supabase = createSupabaseClient();
 
     const { data, error } = await supabase
@@ -275,7 +334,7 @@ export const getCompanionConversations = async (companionId: string, limit = 10)
         `)
         .eq('user_id', userId)
         .eq('companion_id', companionId)
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: false }) // ✅ Descending order (newest first from DB)
         .limit(limit);
 
     if (error) throw new Error(error.message);
@@ -286,6 +345,12 @@ export const getCompanionConversations = async (companionId: string, limit = 10)
 export const getConversationById = async (conversationId: string) => {
     const { userId } = await auth();
     if (!userId) throw new Error('User not authenticated');
+
+    // ✅ Check access
+    const hasAccess = await hasConversationHistoryAccess();
+    if (!hasAccess) {
+        throw new Error('Access denied: Upgrade to Core or Pro plan');
+    }
 
     const supabase = createSupabaseClient();
 
@@ -308,6 +373,12 @@ export const deleteConversation = async (conversationId: string, path: string) =
     const { userId } = await auth();
     if (!userId) throw new Error('User not authenticated');
 
+    // ✅ Check access
+    const hasAccess = await hasConversationHistoryAccess();
+    if (!hasAccess) {
+        throw new Error('Access denied: Upgrade to Core or Pro plan');
+    }
+
     const supabase = createSupabaseClient();
 
     const { data, error } = await supabase
@@ -326,12 +397,24 @@ export const getConversationStats = async () => {
     const { userId } = await auth();
     if (!userId) throw new Error('User not authenticated');
 
+    // ✅ Check access
+    const hasAccess = await hasConversationHistoryAccess();
+    if (!hasAccess) {
+        return {
+            totalConversations: 0,
+            totalDuration: 0,
+            averageDuration: 0,
+            uniqueCompanions: 0,
+        };
+    }
+
     const supabase = createSupabaseClient();
 
     const { data, error } = await supabase
         .from('conversation_history')
         .select('duration, created_at, companion_id')
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false }); // ✅ Descending order
 
     if (error) throw new Error(error.message);
 
@@ -346,4 +429,272 @@ export const getConversationStats = async () => {
         averageDuration: totalConversations > 0 ? Math.round(totalDuration / totalConversations) : 0,
         uniqueCompanions,
     };
+};
+
+// ==================== PREMIUM FEATURES (Core/Pro Only) ====================
+
+// Check if user has access to premium features (recaps, reports)
+// Free (3_companion_limit) = No access
+// Core (10_companion_limit) = Has access
+// Pro (unlimited/pro plan) = Has access
+export const hasPremiumFeatureAccess = async () => {
+    const { has } = await auth();
+
+    // Pro users (unlimited companions) have access
+    if (has({ plan: 'pro' })) return true;
+
+    // Core users (10 companion limit) have access
+    if (has({ feature: "10_companion_limit" })) return true;
+
+    // Free users (3 companion limit) don't have access
+    return false;
+};
+
+// ==================== MONTHLY REPORTS ====================
+
+export const generateMonthlyReport = async (month: number, year: number) => {
+    const { userId } = await auth();
+    if (!userId) throw new Error('User not authenticated');
+
+    const hasAccess = await hasPremiumFeatureAccess();
+    if (!hasAccess) throw new Error('Upgrade to Core or Pro for monthly reports');
+
+    const supabase = createSupabaseClient();
+
+    // Get all conversations for the month
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0, 23, 59, 59);
+
+    const { data: conversations, error: convError } = await supabase
+        .from('conversation_history')
+        .select(`*, companions:companion_id (subject, duration, topic, name)`)
+        .eq('user_id', userId)
+        .gte('created_at', startDate.toISOString())
+        .lte('created_at', endDate.toISOString());
+
+    if (convError) throw new Error(convError.message);
+
+    // Calculate statistics with detailed subject tracking
+    const totalSessions = conversations.length;
+    const totalDuration = conversations.reduce((sum, c) => sum + (c.duration || 0), 0);
+
+    const subjectsStudied: Record<string, {
+        sessions: number;
+        totalDuration: number;
+        expectedDuration: number;
+        companions: Set<string>;
+    }> = {};
+
+    const companionsUsed = new Set<string>();
+
+    conversations.forEach(conv => {
+        const subject = conv.companions?.subject;
+        const companionDuration = conv.companions?.duration || 0; // Expected duration in minutes
+        const actualDuration = conv.duration || 0; // Actual duration in seconds
+
+        if (subject) {
+            if (!subjectsStudied[subject]) {
+                subjectsStudied[subject] = {
+                    sessions: 0,
+                    totalDuration: 0,
+                    expectedDuration: 0,
+                    companions: new Set(),
+                };
+            }
+            subjectsStudied[subject].sessions += 1;
+            subjectsStudied[subject].totalDuration += actualDuration;
+            subjectsStudied[subject].expectedDuration += companionDuration * 60; // Convert to seconds
+            subjectsStudied[subject].companions.add(conv.companions.name);
+        }
+        companionsUsed.add(conv.companion_id);
+    });
+
+    // Convert to serializable format
+    const subjectsData: Record<string, any> = {};
+    Object.entries(subjectsStudied).forEach(([subject, data]) => {
+        const completionPercentage = data.expectedDuration > 0
+            ? Math.round((data.totalDuration / data.expectedDuration) * 100)
+            : 100;
+
+        subjectsData[subject] = {
+            sessions: data.sessions,
+            totalDuration: data.totalDuration,
+            expectedDuration: data.expectedDuration,
+            completionPercentage,
+            companions: Array.from(data.companions),
+        };
+    });
+
+    // Calculate insights for strengths and areas for improvement
+    const strengths: string[] = [];
+    const areasForImprovement: string[] = [];
+
+    // Identify strengths (>80% completion or high engagement)
+    Object.entries(subjectsData).forEach(([subject, data]) => {
+        if (data.completionPercentage >= 80) {
+            strengths.push(`Strong engagement in ${subject} with ${data.completionPercentage}% completion`);
+        }
+        if (data.sessions >= 3) {
+            strengths.push(`Consistent practice in ${subject} (${data.sessions} sessions)`);
+        }
+    });
+
+    // Identify areas for improvement (<50% completion or low session count)
+    Object.entries(subjectsData).forEach(([subject, data]) => {
+        if (data.completionPercentage < 50 && data.sessions > 0) {
+            areasForImprovement.push(`Complete more ${subject} sessions (currently ${data.completionPercentage}%)`);
+        }
+    });
+
+    // Add general improvements if no specific ones
+    if (areasForImprovement.length === 0 && totalSessions > 0) {
+        areasForImprovement.push('Try exploring new subjects to diversify learning');
+    }
+
+    const reportData = {
+        totalSessions,
+        totalDuration,
+        averageDuration: totalSessions > 0 ? Math.round(totalDuration / totalSessions) : 0,
+        subjectsStudied: subjectsData,
+        companionsUsed: Array.from(companionsUsed),
+        mostStudiedSubject: Object.entries(subjectsData).sort((a, b) => b[1].sessions - a[1].sessions)[0]?.[0],
+        strengths,
+        areasForImprovement,
+    };
+
+    // Save report - for backwards compatibility, keep old format too
+    const simpleSubjects: Record<string, number> = {};
+    Object.entries(subjectsData).forEach(([subject, data]) => {
+        simpleSubjects[subject] = data.sessions;
+    });
+
+    const { data, error } = await supabase
+        .from('monthly_reports')
+        .upsert({
+            user_id: userId,
+            month,
+            year,
+            total_sessions: totalSessions,
+            total_duration: totalDuration,
+            subjects_studied: simpleSubjects,
+            companions_used: Array.from(companionsUsed),
+            strengths, // ✅ Now populated
+            areas_for_improvement: areasForImprovement, // ✅ Now populated
+            report_data: reportData,
+        }, { onConflict: 'user_id,month,year' })
+        .select()
+        .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+};
+
+export const getMonthlyReport = async (month: number, year: number) => {
+    const { userId } = await auth();
+    if (!userId) throw new Error('User not authenticated');
+
+    const hasAccess = await hasPremiumFeatureAccess();
+    if (!hasAccess) throw new Error('Upgrade to Core or Pro for monthly reports');
+
+    const supabase = createSupabaseClient();
+
+    const { data, error } = await supabase
+        .from('monthly_reports')
+        .select()
+        .eq('user_id', userId)
+        .eq('month', month)
+        .eq('year', year)
+        .single();
+
+    if (error && error.code !== 'PGRST116') throw new Error(error.message);
+    return data;
+};
+
+export const getAllMonthlyReports = async () => {
+    const { userId } = await auth();
+    if (!userId) throw new Error('User not authenticated');
+
+    const hasAccess = await hasPremiumFeatureAccess();
+    if (!hasAccess) return [];
+
+    const supabase = createSupabaseClient();
+
+    const { data, error } = await supabase
+        .from('monthly_reports')
+        .select()
+        .eq('user_id', userId)
+        .order('year', { ascending: false })
+        .order('month', { ascending: false });
+
+    if (error) throw new Error(error.message);
+    return data;
+};
+
+// ==================== SESSION RECAPS ====================
+
+export const generateSessionRecap = async (conversationId: string) => {
+    const { userId } = await auth();
+    if (!userId) throw new Error('User not authenticated');
+
+    const hasAccess = await hasPremiumFeatureAccess();
+    if (!hasAccess) throw new Error('Upgrade to Core or Pro for session recaps');
+
+    const supabase = createSupabaseClient();
+
+    // Get conversation
+    const { data: conversation, error: convError } = await supabase
+        .from('conversation_history')
+        .select('*, companions:companion_id (*)')
+        .eq('id', conversationId)
+        .eq('user_id', userId)
+        .single();
+
+    if (convError) throw new Error(convError.message);
+
+    // Here you would integrate with AI to generate recap
+    // For now, we'll create a basic recap from the conversation
+    const messages = conversation.messages as Array<{role: string; content: string}>;
+    const keyPoints = messages
+        .filter(m => m.role === 'assistant')
+        .slice(0, 3)
+        .map(m => m.content.substring(0, 100));
+
+    const summary = `Session on ${conversation.companions.topic} completed. ${messages.length} messages exchanged.`;
+
+    const { data, error } = await supabase
+        .from('session_recaps')
+        .insert({
+            conversation_id: conversationId,
+            user_id: userId,
+            companion_id: conversation.companion_id,
+            key_points: keyPoints,
+            summary,
+            next_steps: ['Review key concepts', 'Practice with examples'],
+            difficulty_level: 'medium',
+        })
+        .select()
+        .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+};
+
+export const getSessionRecap = async (conversationId: string) => {
+    const { userId } = await auth();
+    if (!userId) throw new Error('User not authenticated');
+
+    const hasAccess = await hasPremiumFeatureAccess();
+    if (!hasAccess) throw new Error('Upgrade to Core or Pro for session recaps');
+
+    const supabase = createSupabaseClient();
+
+    const { data, error } = await supabase
+        .from('session_recaps')
+        .select('*, companions:companion_id (*)')
+        .eq('conversation_id', conversationId)
+        .eq('user_id', userId)
+        .single();
+
+    if (error && error.code !== 'PGRST116') throw new Error(error.message);
+    return data;
 };

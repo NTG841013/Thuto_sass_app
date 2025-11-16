@@ -26,6 +26,8 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
 
     // ✅ Use a ref to store messages so they're not lost during state updates
     const messagesRef = useRef<SavedMessage[]>([]);
+    // ✅ Also use ref for callStartTime to ensure it persists
+    const callStartTimeRef = useRef<number | null>(null);
 
     const lottieRef = useRef<LottieRefCurrentProps>(null);
     const isConnectingRef = useRef(false);
@@ -43,19 +45,29 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
     useEffect(() => {
         const onCallStart = () => {
             console.log('✅ Call started successfully');
+            const startTime = Date.now();
             setCallStatus(CallStatus.ACTIVE);
             setError(null);
             isConnectingRef.current = false;
-            setCallStartTime(Date.now());
+            setCallStartTime(startTime);
+            callStartTimeRef.current = startTime; // ✅ Store in ref too
+            console.log('⏱️ Call start time set:', startTime);
         };
 
         const onCallEnd = async () => {
             console.log('✅ Call ended successfully');
-            setCallStatus(CallStatus.FINISHED);
-            isConnectingRef.current = false;
 
-            // Calculate call duration in seconds
-            const duration = callStartTime ? Math.round((Date.now() - callStartTime) / 1000) : 0;
+            // ✅ Get duration from ref (more reliable than state)
+            const startTime = callStartTimeRef.current;
+            const endTime = Date.now();
+            const duration = startTime ? Math.round((endTime - startTime) / 1000) : 0;
+
+            console.log('⏱️ Duration calculation:', {
+                startTime,
+                endTime,
+                duration,
+                callStartTimeState: callStartTime,
+            });
 
             // ✅ Use messagesRef to get the actual messages, not state
             const savedMessages = messagesRef.current;
@@ -66,11 +78,15 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
                 companionId,
             });
 
+            // Update UI state
+            setCallStatus(CallStatus.FINISHED);
+            isConnectingRef.current = false;
+
             try {
-                // Add to session history and get the session ID
-                console.log('💾 Saving session history...');
-                const session = await addToSessionHistory(companionId);
-                console.log('✅ Session history saved:', session);
+                // Add to session history with duration
+                console.log('💾 Saving session history with duration:', duration);
+                const session = await addToSessionHistory(companionId, duration);
+                console.log('✅ Session history saved:', JSON.stringify(session, null, 2));
 
                 const currentSessionId = session?.[0]?.id;
 
@@ -88,14 +104,14 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
                         duration,
                     });
 
-                    await saveConversationHistory({
+                    const conversationResult = await saveConversationHistory({
                         sessionId: currentSessionId,
                         companionId,
                         messages: savedMessages,
                         duration,
                     });
 
-                    console.log('✅ Conversation saved successfully with', savedMessages.length, 'messages');
+                    console.log('✅ Conversation saved successfully:', JSON.stringify(conversationResult, null, 2));
                 } else {
                     console.warn('⚠️ No messages to save');
                 }
@@ -205,7 +221,8 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
             console.log('📊 Current state:', {
                 messageCount: messages.length,
                 callStartTime,
-                duration: callStartTime ? Math.round((Date.now() - callStartTime) / 1000) : 0,
+                callStartTimeRef: callStartTimeRef.current,
+                duration: callStartTimeRef.current ? Math.round((Date.now() - callStartTimeRef.current) / 1000) : 0,
             });
             setCallStatus(CallStatus.FINISHED);
             vapi.stop();
@@ -220,12 +237,13 @@ const CompanionComponent = ({ companionId, subject, topic, name, userName, userI
         console.log('🔍 Current Component State:', {
             callStatus,
             messageCount: messages.length,
-            messagesRefCount: messagesRef.current.length, // ✅ Also log ref count
+            messagesRefCount: messagesRef.current.length,
             messages: messages,
             messagesRef: messagesRef.current,
             companionId,
             callStartTime,
-            duration: callStartTime ? Math.round((Date.now() - callStartTime) / 1000) : 0,
+            callStartTimeRef: callStartTimeRef.current,
+            duration: callStartTimeRef.current ? Math.round((Date.now() - callStartTimeRef.current) / 1000) : 0,
         });
     };
 
