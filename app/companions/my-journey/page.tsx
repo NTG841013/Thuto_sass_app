@@ -37,7 +37,17 @@ const Profile = async () => {
     const hasHistoryAccess = await hasConversationHistoryAccess();
 
     // New conversation history data (only if has access)
-    const conversations = hasHistoryAccess ? await getUserConversations(20) : [];
+    const conversations = hasHistoryAccess ? await getUserConversations(20, 1, 'asc') : [];
+
+    console.log('🔍 Journey page conversations:', {
+        count: conversations.length,
+        hasAccess: hasHistoryAccess,
+        firstThree: conversations.slice(0, 3).map(c => ({
+            id: c.id.substring(0, 8),
+            created_at: c.created_at,
+        })),
+    });
+
     const stats = hasHistoryAccess ? await getConversationStats() : {
         totalConversations: 0,
         totalDuration: 0,
@@ -201,8 +211,8 @@ const Profile = async () => {
                                 </div>
                             ) : (
                                 <div className="flex flex-col gap-4">
-                                    {/* Reverse the array to show oldest first (ascending order) */}
-                                    {conversations.slice().reverse().map((conversation) => (
+                                    {/* Display in ascending order (oldest first) */}
+                                    {conversations.map((conversation) => (
                                         <ConversationCard
                                             key={conversation.id}
                                             conversation={conversation}

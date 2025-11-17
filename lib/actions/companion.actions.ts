@@ -286,7 +286,7 @@ export const saveConversationHistory = async ({
     return data;
 };
 
-export const getUserConversations = async (limit = 20, page = 1) => {
+export const getUserConversations = async (limit = 20, page = 1, sortOrder: 'asc' | 'desc' = 'asc') => {
     const { userId } = await auth();
     if (!userId) throw new Error('User not authenticated');
 
@@ -306,10 +306,25 @@ export const getUserConversations = async (limit = 20, page = 1) => {
             session_history:session_id (created_at)
         `)
         .eq('user_id', userId)
-        .order('created_at', { ascending: true }) // ✅ ASCENDING = Oldest first
+        .order('created_at', { ascending: sortOrder === 'asc' }) // ✅ Configurable sort order
         .range((page - 1) * limit, page * limit - 1);
 
     if (error) throw new Error(error.message);
+
+    console.log('📊 getUserConversations:', {
+        count: data.length,
+        sortOrder,
+        ascending: sortOrder === 'asc',
+        firstConversation: data[0] ? {
+            id: data[0].id.substring(0, 8),
+            created_at: data[0].created_at,
+        } : null,
+        lastConversation: data[data.length - 1] ? {
+            id: data[data.length - 1].id.substring(0, 8),
+            created_at: data[data.length - 1].created_at,
+        } : null,
+        allDates: data.map(d => d.created_at),
+    });
 
     return data;
 };
@@ -604,6 +619,64 @@ export const getMonthlyReport = async (month: number, year: number) => {
         .eq('user_id', userId)
         .eq('month', month)
         .eq('year', year)
+        .single();
+
+    if (error && error.code !== 'PGRST116') throw new Error(error.message);
+    return data;
+};
+
+// ==================== LEARNING REMINDERS (Pro Only) ====================
+
+export const saveLearningReminders = async ({
+                                                enabled,
+                                                time,
+                                                frequency,
+                                                customDays,
+                                            }: {
+    enabled: boolean;
+    time: string;
+    frequency: 'daily' | 'weekdays' | 'custom';
+    customDays?: string[];
+}) => {
+    const { userId, has } = await auth();
+    if (!userId) throw new Error('User not authenticated');
+
+    // Check if user is Pro
+    const isProUser = has({ plan: 'pro' });
+    if (!isProUser) throw new Error('Daily reminders are only available for Pro users');
+
+    const supabase = createSupabaseClient();
+
+    const { data, error } = await supabase
+        .from('learning_reminders')
+        .upsert({
+            user_id: userId,
+            enabled,
+            reminder_time: time,
+            frequency,
+            custom_days: customDays,
+        }, { onConflict: 'user_id' })
+        .select()
+        .single();
+
+    if (error) throw new Error(error.message);
+    return data;
+};
+
+export const getLearningReminders = async () => {
+    const { userId, has } = await auth();
+    if (!userId) throw new Error('User not authenticated');
+
+    // Check if user is Pro
+    const isProUser = has({ plan: 'pro' });
+    if (!isProUser) return null;
+
+    const supabase = createSupabaseClient();
+
+    const { data, error } = await supabase
+        .from('learning_reminders')
+        .select()
+        .eq('user_id', userId)
         .single();
 
     if (error && error.code !== 'PGRST116') throw new Error(error.message);

@@ -8,6 +8,7 @@ const navItems = [
     {label: "Home", href: "/"},
     {label: "Companions", href: "/companions"},
     {label: "My Journey", href: "/companions/my-journey"},
+    {label: "Dashboard", href: "/dashboard"}, // Add this
 ]
 
 const NavItems = () => {
