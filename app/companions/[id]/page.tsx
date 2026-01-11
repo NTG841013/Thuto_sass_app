@@ -63,4 +63,5 @@ const CompanionSession = async ({ params }: CompanionSessionProps) => {
     );
 };
 
+
 export default CompanionSession;

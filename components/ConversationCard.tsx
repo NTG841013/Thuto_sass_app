@@ -51,6 +51,9 @@ const ConversationCard = ({ conversation }: ConversationCardProps) => {
         }
     };
 
+    // ✅ FIX: Reverse messages to show oldest first (chronological order)
+    const sortedMessages = [...messages].reverse();
+
     return (
         <article className="rounded-border p-6 bg-white">
             <div className="flex justify-between items-start gap-4">
@@ -106,7 +109,8 @@ const ConversationCard = ({ conversation }: ConversationCardProps) => {
                 <div className="mt-4 pt-4 border-t border-gray-200">
                     <h3 className="font-semibold mb-3">Conversation</h3>
                     <div className="flex flex-col gap-3 max-h-96 overflow-y-auto">
-                        {messages.map((message, index) => (
+                        {/* ✅ Use sortedMessages instead of messages */}
+                        {sortedMessages.map((message, index) => (
                             <div
                                 key={index}
                                 className={`p-3 rounded-lg ${
